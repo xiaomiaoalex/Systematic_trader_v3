@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>币安自动交易系统 v3.0</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+</head>
+<body>
+<div id="app">
+    <aside class="sidebar">
+        <div class="sidebar-header"><div class="logo"><span class="logo-icon">📈</span><span class="logo-text">交易系统 v3</span></div></div>
+        <nav class="sidebar-nav">
+            <a v-for="item in menuItems" :key="item.id" :class="{ active: currentView === item.id }" @click="currentView = item.id">
+                <span class="nav-icon">{{ item.icon }}</span><span class="nav-text">{{ item.name }}</span>
+            </a>
+        </nav>
+    </aside>
+    <main class="main-content">
+        <header class="top-bar">
+            <h1>{{ currentViewTitle }}</h1>
+            <div class="top-actions">
+                <div class="balance-info"><span class="balance-label">账户余额</span><span class="balance-value">{{ formatBalance(accountBalance) }} USDT</span></div>
+                <button class="btn btn-primary" @click="refreshData">🔄 刷新</button>
+            </div>
+        </header>
+        <div class="content-area">
+            <div v-if="currentView === 'dashboard'" class="view-dashboard">
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-content"><div class="stat-value">{{ formatBalance(accountBalance) }}</div><div class="stat-label">账户余额</div></div></div>
+                    <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-content"><div class="stat-value">{{ dailyPnL >= 0 ? '+' : '' }}{{ formatBalance(dailyPnL) }}</div><div class="stat-label">今日盈亏</div></div></div>
+                    <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-content"><div class="stat-value">{{ winRate }}%</div><div class="stat-label">胜率</div></div></div>
+                    <div class="stat-card"><div class="stat-icon">📉</div><div class="stat-content"><div class="stat-value">{{ maxDrawdown }}%</div><div class="stat-label">最大回撤</div></div></div>
+                </div>
+            </div>
+            <div v-if="currentView === 'strategy'" class="view-strategy">
+                <div class="strategy-toolbar"><button class="btn btn-primary">➕ 添加策略</button><button class="btn" @click="loadStrategies">🔄 刷新</button></div>
+                <div class="strategy-grid">
+                    <div v-for="s in strategies" :key="s.name" class="strategy-card">
+                        <div class="strategy-header"><h3>{{ s.name }}</h3><span class="status-badge" :class="s.enabled ? 'enabled' : 'disabled'">{{ s.enabled ? '已启用' : '已禁用' }}</span></div>
+                        <div class="strategy-body"><p>{{ s.description }}</p></div>
+                        <div class="strategy-footer"><button class="btn btn-sm" :class="s.enabled ? 'btn-warning' : 'btn-success'" @click="toggleStrategy(s.name)">{{ s.enabled ? '禁用' : '启用' }}</button></div>
+                    </div>
+                </div>
+            </div>
+            <div v-if="currentView === 'backtest'" class="view-backtest">
+                <div class="backtest-layout">
+                    <div class="backtest-config">
+                        <div class="config-card">
+                            <h3>回测配置</h3>
+                            <div class="form-group"><label>策略</label><select v-model="backtestConfig.strategy"><option v-for="s in strategies" :key="s.name" :value="s.name">{{ s.name }}</option></select></div>
+                            <div class="form-group"><label>交易对</label><select v-model="backtestConfig.symbol"><option value="BTCUSDT">BTC/USDT</option><option value="ETHUSDT">ETH/USDT</option></select></div>
+                            <div class="form-group"><label>初始资金</label><input type="number" v-model="backtestConfig.initialCapital"></div>
+                            <button class="btn btn-primary btn-block" @click="runBacktest" :disabled="backtestRunning">{{ backtestRunning ? '回测中...' : '开始回测' }}</button>
+                        </div>
+                    </div>
+                    <div class="backtest-results">
+                        <div v-if="backtestResult" class="results-container">
+                            <div class="performance-overview">
+                                <div class="perf-card" :class="backtestResult.totalReturn >= 0 ? 'profit' : 'loss'"><div class="perf-value">{{ backtestResult.totalReturn.toFixed(2) }}%</div><div class="perf-label">总收益</div></div>
+                                <div class="perf-card"><div class="perf-value">{{ backtestResult.annualReturn.toFixed(2) }}%</div><div class="perf-label">年化</div></div>
+                                <div class="perf-card"><div class="perf-value">{{ backtestResult.maxDrawdown.toFixed(2) }}%</div><div class="perf-label">回撤</div></div>
+                                <div class="perf-card"><div class="perf-value">{{ backtestResult.sharpeRatio.toFixed(2) }}</div><div class="perf-label">夏普</div></div>
+                                <div class="perf-card"><div class="perf-value">{{ backtestResult.winRate.toFixed(2) }}%</div><div class="perf-label">胜率</div></div>
+                                <div class="perf-card"><div class="perf-value">{{ backtestResult.profitFactor.toFixed(2) }}</div><div class="perf-label">盈亏比</div></div>
+                            </div>
+                        </div>
+                        <div v-else class="empty-state"><div class="empty-icon">📊</div><p>配置参数后点击"开始回测"</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

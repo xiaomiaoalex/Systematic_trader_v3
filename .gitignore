@@ -179,3 +179,28 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Frontend dependencies
+node_modules/
+dist/
+.env.local
+.DS_Store
+build/
+.cache/
+
+# --- IDE 与系统文件 ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- IDE Settings ---
+.vscode/             # 存放 launch.json, settings.json 等
+!.vscode/extensions.json  # 除非你想推荐插件给队友，否则可以一起忽略
+*.code-workspace
+
+# --- Trae / AI IDE ---
+.trae/
+.trae-editor/
+.cursorrules         # 如果你不希望 AI 规则文件被上传（可选）
+.aide/               # 部分 AI IDE 的缓存目录
