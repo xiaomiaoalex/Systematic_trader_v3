@@ -18,12 +18,19 @@ class Kline:
     
     @classmethod
     def from_dict(cls, data: Dict) -> 'Kline':
+        # 👇 ====== 万能时间解析器 ====== 👇
+        def safe_parse_time(t):
+            if not t: return None
+            if isinstance(t, (int, float)): return datetime.fromtimestamp(t / 1000)
+            if isinstance(t, str) and t.isdigit(): return datetime.fromtimestamp(int(t) / 1000)
+            return datetime.fromisoformat(str(t))
+        # 👆 ============================ 👆
         return cls(
             symbol=data['symbol'], interval=data['interval'],
-            open_time=datetime.fromisoformat(data['open_time']) if isinstance(data['open_time'], str) else data['open_time'],
+            open_time=safe_parse_time(data.get('open_time')),
             open=float(data['open']), high=float(data['high']), low=float(data['low']),
             close=float(data['close']), volume=float(data['volume']),
-            close_time=datetime.fromisoformat(data['close_time']) if isinstance(data['close_time'], str) else data['close_time']
+            close_time=safe_parse_time(data.get('close_time'))
         )
     
     def to_dict(self) -> Dict:

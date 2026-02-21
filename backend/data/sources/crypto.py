@@ -1,73 +1,58 @@
-"""
-加密货币数据源
-基于CCXT实现，支持多个交易所
-"""
-import os
-from typing import Optional, List, Dict
-from datetime import datetime
+import asyncio
+import logging
 import ccxt.async_support as ccxt
+from typing import Dict, List, Optional, Any
+import pandas as pd
 
-from data.sources.base import Kline, Ticker
 from core.config import config
-from core.logger import logger
 from core.exceptions import DataError
 
+logger = logging.getLogger(__name__)
 
 class CryptoDataSource:
-    """加密货币数据源"""
+    """加密货币数据源 (支持 Binance 实盘与模拟盘)"""
     
-    TIMEFRAME_MAP = {
-        '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m',
-        '30m': '30m', '1h': '1h', '2h': '2h', '4h': '4h',
-        '6h': '6h', '12h': '12h', '1d': '1d', '1w': '1w', '1M': '1M'
-    }
-    
-    TIMEFRAME_MS = {
-        '1m': 60000, '3m': 180000, '5m': 300000, '15m': 900000,
-        '30m': 1800000, '1h': 3600000, '2h': 7200000, '4h': 14400000,
-        '6h': 21600000, '12h': 43200000, '1d': 86400000, '1w': 604800000
-    }
-    
-    def __init__(self, exchange_id: str = 'binance'):
-        self.name = exchange_id
-        self._exchange: Optional[ccxt.Exchange] = None
+    def __init__(self):
+        self.name = "binance"
+        self._exchange: Optional[ccxt.binance] = None
         self._connected = False
-        self._http_proxy = os.getenv('HTTP_PROXY') or os.getenv('HTTPS_PROXY')
-    
-    @staticmethod
-    def _to_ccxt_symbol(symbol: str) -> str:
-        if '/' in symbol:
-            return symbol
-        for quote in ['USDT', 'BUSD', 'USDC', 'BTC', 'ETH', 'BNB']:
-            if symbol.endswith(quote):
-                return f"{symbol[:-len(quote)]}/{quote}"
-        return symbol
-    
-    @staticmethod
-    def _to_standard_symbol(symbol: str) -> str:
-        return symbol.replace('/', '')
-    
+
     async def connect(self) -> None:
+        """建立与交易所的异步连接"""
         try:
+            # 基础配置
             exchange_config = {
                 'apiKey': config.binance.effective_api_key,
                 'secret': config.binance.effective_api_secret,
                 'enableRateLimit': True,
                 'options': {
-                    'adjustForTimeDifference': True,
+                    'defaultType': 'future',         # 明确交易类型为合约
+                    'adjustForTimeDifference': True, # 自动同步系统时间防止签名错误
                 }
             }
             
-            if self._http_proxy:
-                exchange_config['aiohttp_proxy'] = self._http_proxy
-                logger.info(f"[{self.name}] 使用代理")
+            # 👇 ====== 强制开启本地网络代理 ====== 👇
+            local_proxy = "http://127.0.0.1:4780"
             
-            # 测试网配置 - 直接设置URL
-            if config.binance.use_testnet:
-                exchange_config['options']['defaultType'] = 'future'
-                logger.info(f"[{self.name}] 使用测试网环境")
+            exchange_config['proxies'] = {
+                'http': local_proxy,
+                'https': local_proxy
+            }
+            exchange_config['aiohttp_proxy'] = local_proxy  # 确保异步引擎穿透
             
+            logger.info(f"[{self.name}] 强制网络代理已开启: {local_proxy}")
+            # 👆 ========================================= 👆
+            
+            # 实例化 CCXT
             self._exchange = ccxt.binance(exchange_config)
+            
+            # --- 核心：CCXT 最新版 Demo Trading 专属开关 ---
+            # 使用 getattr 防御性读取，防止 config 中缺少 use_testnet 属性报错
+            if getattr(config.binance, 'use_testnet', False):
+                self._exchange.enable_demo_trading(True)
+                logger.info(f"[{self.name}] 已开启币安 Demo Trading (模拟交易) 环境")
+            
+            # 验证连接并预载市场信息
             await self._exchange.load_markets()
             
             self._connected = True
@@ -77,100 +62,136 @@ class CryptoDataSource:
             self._connected = False
             logger.error(f"[{self.name}] 连接失败: {e}")
             raise DataError(f"连接交易所失败: {e}")
-    
-    async def disconnect(self) -> None:
+
+    async def close(self) -> None:
+        """关闭交易所连接"""
         if self._exchange:
             await self._exchange.close()
-            self._exchange = None
-        self._connected = False
-        logger.info(f"[{self.name}] 已断开连接")
-    
-    async def get_klines(self, symbol: str, interval: str = '1h', limit: int = 500,
-                         start_time: Optional[int] = None) -> List[Kline]:
-        if not self._connected:
-            raise DataError("数据源未连接")
+            self._connected = False
+            logger.info(f"[{self.name}] 已断开连接")
+
+    async def fetch_ohlcv(
+        self, 
+        symbol: str, 
+        timeframe: str = '1m', 
+        limit: int = 500,
+        max_retries: int = 3  # 👇 新增：最大重试次数
+    ) -> pd.DataFrame:
+        """
+        获取历史 K 线数据 (自带网络防弹与指数退避重试机制)
+        """
+        # 开启重试循环
+        for attempt in range(max_retries):
+            try:
+                if not self._connected or not self._exchange:
+                    await self.connect()
+                    
+                # 统一符号格式
+                formatted_symbol = symbol.replace('/', '')
+                
+                # 发起网络请求
+                ohlcv = await self._exchange.fetch_ohlcv(
+                    formatted_symbol, 
+                    timeframe=timeframe, 
+                    limit=limit
+                )
+                
+                if not ohlcv:
+                    return pd.DataFrame()
+                    
+                df = pd.DataFrame(
+                    ohlcv, 
+                    columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                )
+                
+                # 注入数据库需要的身份信息
+                df['symbol'] = symbol
+                df['interval'] = timeframe
+                df['open_time'] = df['timestamp']
+                df['close_time'] = df['timestamp']
+                
+                # 转换时间戳为 datetime 对象并设为索引
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                df.set_index('timestamp', inplace=True)
+                
+                return df
+                
+            # 👇 ====== 核心防弹衣：网络异常精确捕获 ====== 👇
+            except ccxt.NetworkError as e:
+                # 触发指数退避：1秒 -> 2秒 -> 4秒
+                wait_time = 2 ** attempt  
+                logger.warning(f"[{self.name}] ⚠️ 网络波动，拉取K线失败: {e}。等待 {wait_time} 秒后重试 ({attempt + 1}/{max_retries})...")
+                await asyncio.sleep(wait_time)
+                
+            except ccxt.ExchangeError as e:
+                # 触发交易所业务报错（比如 API Key 过期、参数写错），重试没用，直接打断
+                logger.error(f"[{self.name}] ❌ 交易所拒绝请求: {e}")
+                break
+                
+            except Exception as e:
+                # 触发其他致命错误
+                logger.exception(f"[{self.name}] 💥 获取 K 线发生未知致命错误:")
+                break
+            # 👆 ========================================= 👆
+
+        # 如果循环结束还没 return，说明重试耗尽了
+        logger.error(f"[{self.name}] 🚨 达到最大重试次数 ({max_retries})，获取 K 线彻底失败 ({symbol})")
+        return pd.DataFrame()
         
-        ccxt_symbol = self._to_ccxt_symbol(symbol)
-        timeframe = self.TIMEFRAME_MAP.get(interval, '1h')
-        
-        try:
-            ohlcv = await self._exchange.fetch_ohlcv(ccxt_symbol, timeframe, limit=limit)
-            interval_ms = self.TIMEFRAME_MS.get(timeframe, 3600000)
+    # 👇 ====== 查账接口 ====== 👇
+    async def get_account_info(self) -> dict:
+        """获取账户当前的钱包余额信息"""
+        if not self._connected or not self._exchange:
+            await self.connect()
             
-            return [Kline(
-                symbol=symbol, interval=interval,
-                open_time=datetime.fromtimestamp(item[0] / 1000),
-                open=float(item[1]), high=float(item[2]), low=float(item[3]),
-                close=float(item[4]), volume=float(item[5]),
-                close_time=datetime.fromtimestamp((item[0] + interval_ms) / 1000)
-            ) for item in ohlcv]
+        try:
+            # 调用 CCXT 原生的 fetch_balance 获取资产字典
+            balance = await self._exchange.fetch_balance()
+            return balance
+            
         except Exception as e:
-            logger.error(f"获取K线失败: {e}")
-            raise DataError(f"获取K线数据失败: {e}")
+            logger.error(f"[{self.name}] ❌ 获取账户余额失败: {e}")
+            return {}
     
-    async def get_ticker(self, symbol: str) -> Ticker:
-        if not self._connected:
-            raise DataError("数据源未连接")
-        
-        ticker = await self._exchange.fetch_ticker(self._to_ccxt_symbol(symbol))
-        return Ticker(
-            symbol=symbol, last=float(ticker['last']),
-            bid=float(ticker.get('bid', 0)), ask=float(ticker.get('ask', 0)),
-            high_24h=float(ticker.get('high', 0)), low_24h=float(ticker.get('low', 0)),
-            volume_24h=float(ticker.get('baseVolume', 0))
-        )
+
+    async def fetch_balance(self) -> Dict[str, Any]:
+        """获取账户余额 (仅限合约账户)"""
+        if not self._connected or not self._exchange:
+            await self.connect()
+            
+        try:
+            balance = await self._exchange.fetch_balance()
+            return balance
+        except Exception as e:
+            logger.error(f"[{self.name}] 获取余额失败: {e}")
+            return {}
     
-    async def get_symbols(self) -> List[str]:
-        if not self._connected:
-            raise DataError("数据源未连接")
-        return [self._to_standard_symbol(s) for s in self._exchange.markets.keys() if '/USDT' in s]
-    
-    async def get_balance(self, asset: str = 'USDT') -> float:
-        if not self._connected:
-            raise DataError("数据源未连接")
-        balance = await self._exchange.fetch_balance()
-        return float(balance.get(asset, {}).get('total', 0))
-    
-    async def get_account_info(self) -> Dict:
-        if not self._connected:
-            raise DataError("数据源未连接")
-        balance = await self._exchange.fetch_balance()
-        return {
-            'totalWalletBalance': balance.get('USDT', {}).get('total', 0),
-            'availableBalance': balance.get('USDT', {}).get('free', 0),
-            'assets': [{'asset': a, 'walletBalance': i.get('total', 0)}
-                      for a, i in balance.items() if isinstance(i, dict) and i.get('total', 0) > 0]
-        }
-    
-    async def get_positions(self) -> List[Dict]:
-        if not self._connected:
-            raise DataError("数据源未连接")
-        balance = await self._exchange.fetch_balance()
-        return [{'symbol': f"{a}USDT", 'asset': a, 'quantity': float(i.get('total', 0)), 'side': 'LONG'}
-               for a, i in balance.items() if isinstance(i, dict) and float(i.get('total', 0)) > 0
-               and a not in ['USDT', 'BUSD', 'USDC']]
-    
-    async def place_order(self, symbol: str, side: str, order_type: str,
-                         quantity: float, price: Optional[float] = None) -> Dict:
-        if not self._connected:
-            raise DataError("数据源未连接")
-        
-        ccxt_symbol = self._to_ccxt_symbol(symbol)
-        ccxt_side = 'buy' if side.upper() == 'BUY' else 'sell'
-        
-        if order_type.upper() == 'MARKET':
-            order = await self._exchange.create_market_order(ccxt_symbol, ccxt_side, quantity)
-        else:
-            order = await self._exchange.create_limit_order(ccxt_symbol, ccxt_side, quantity, price)
-        
-        return {
-            'orderId': order.get('id'), 'symbol': symbol, 'status': order.get('status'),
-            'filled': float(order.get('filled', 0)), 'average': float(order.get('average', 0) or 0)
-        }
+    # 👇 ====== 新增的兼容桥梁 ====== 👇
+    async def disconnect(self) -> None:
+        """兼容其他模块的 disconnect 调用"""
+        await self.close()
+
+    async def get_balance(self) -> Dict[str, Any]:
+        """兼容其他模块的 get_balance 调用"""
+        return await self.fetch_balance()
+    # 👆 ============================ 👆
+    # 👇 ====== 这是要新增的最后一块拼图 ====== 👇
+    async def get_klines(self, symbol: str, interval: str = '1m', limit: int = 500, **kwargs) -> pd.DataFrame:
+        """兼容其他模块获取K线的调用 (将 interval 映射到 timeframe)"""
+        # 如果有传来 timeframe 就用 timeframe，否则默认用 interval
+        timeframe = kwargs.get('timeframe', interval)
+        return await self.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected
     
     @property
     def is_connected(self) -> bool:
         return self._connected
 
-
+# ==========================================
+# 创建全局单例对象，供其他模块直接导入使用
+# 解决 ImportError: cannot import name 'crypto_data_source'
+# ==========================================
 crypto_data_source = CryptoDataSource()

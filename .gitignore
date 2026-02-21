@@ -135,7 +135,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
+.env.* <-- 添加这一行，它会忽略所有以 .env. 开头的文件
+!.env.example <-- 如果你有模板文件，可以用感叹号排除它（不忽略模板）
+*.db 
 # Spyder project settings
 .spyderproject
 .spyproject

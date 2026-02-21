@@ -69,7 +69,18 @@ class RiskManager:
             self._current_drawdown = (self._peak_balance - current_balance) / self._peak_balance * 100
     
     def get_risk_status(self) -> RiskStatus:
-        daily_loss = abs(self._daily_pnl) / self._daily_start_balance * 100 if self._daily_start_balance > 0 else 0
+        # 👇 ====== 余额字典解析补丁 ====== 👇
+        start_balance = self._daily_start_balance
+        # 如果余额是个字典，就精准提取 USDT 的总额
+        if isinstance(start_balance, dict):
+            start_balance = float(start_balance.get('total', {}).get('USDT', 0.0))
+        else:
+            start_balance = float(start_balance)
+            
+        # 安全计算每日回撤
+        pnl = float(self._daily_pnl) if isinstance(self._daily_pnl, (int, float)) else 0.0
+        daily_loss = (abs(pnl) / start_balance * 100) if start_balance > 0 else 0.0
+        # 👆 ============================== 👆
         risk_level = "low"
         can_trade = True
         if daily_loss >= self.max_daily_loss_percent * 0.8 or self._current_drawdown >= self.max_drawdown_percent * 0.8:

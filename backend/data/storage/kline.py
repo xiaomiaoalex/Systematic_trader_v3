@@ -20,9 +20,43 @@ class KlineStorage:
             logger.info(f"[KlineStorage] 加载 {len(self._klines)} 根K线")
     
     async def add_klines(self, klines: List[Kline]) -> int:
-        if not klines: return 0
+        if klines is None or klines.empty: return 0
         existing = {k.open_time for k in self._klines}
-        new_klines = [k for k in klines if k.open_time not in existing]
+# 👇 ====== 高性能 DataFrame 兼容桥梁 (终极形态) ====== 👇
+        import pandas as pd
+
+        class DataFrameKlineAdapter:
+            """完美的鸭子类型适配器，并解决 SQLite 数据类型不兼容问题"""
+            def __init__(self, data_dict):
+                clean_dict = {}
+                for key, value in data_dict.items():
+                    # 核心净化：把 Pandas 的 Timestamp 彻底转换为普通的 Python 整数（毫秒）
+                    if isinstance(value, pd.Timestamp):
+                        clean_dict[key] = int(value.timestamp() * 1000)
+                    else:
+                        clean_dict[key] = value
+                self.__dict__.update(clean_dict)
+            
+            def to_dict(self):
+                return self.__dict__
+
+        new_klines = []
+        if isinstance(klines, pd.DataFrame):
+            # 将索引还原为普通列以便读取
+            df_temp = klines.reset_index() if klines.index.name else klines
+            
+            for _, row in df_temp.iterrows():
+                time_val = row.get('timestamp', row.get('open_time'))
+                if time_val not in existing:
+                    row_dict = row.to_dict()
+                    row_dict['open_time'] = time_val
+                    # 通过净化器实例化
+                    new_klines.append(DataFrameKlineAdapter(row_dict))
+        else:
+            # 保留对原有列表类型的兼容
+            new_klines = [k for k in klines if getattr(k, 'open_time', None) not in existing]
+        # 👆 ================================================ 👆
+
         if new_klines:
             self._klines.extend(new_klines)
             if len(self._klines) > self.max_cache_size:
