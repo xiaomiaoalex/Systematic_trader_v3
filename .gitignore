@@ -206,3 +206,9 @@ Thumbs.db
 .trae-editor/
 .cursorrules         # 如果你不希望 AI 规则文件被上传（可选）
 .aide/               # 部分 AI IDE 的缓存目录
+
+# 云盘同步临时文件
+.tmp.driveupload/
+*.tmp
+*~
+
