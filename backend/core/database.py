@@ -30,6 +30,11 @@ class Database:
     async def connect(self) -> None:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = await aiosqlite.connect(self.db_path)
+        
+        # 👇【核心修复：并发装甲】开启 WAL 模式和 Normal 同步，彻底解决 Database is locked
+        await self._conn.execute('PRAGMA journal_mode=WAL;')
+        await self._conn.execute('PRAGMA synchronous=NORMAL;')
+        
         await self._create_tables()
     
     async def close(self) -> None:
