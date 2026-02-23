@@ -81,6 +81,27 @@ def create_app() -> FastAPI:
     async def disable_strategy(name: str):
         return {"success": strategy_manager.disable_strategy(name)}
     
+    # 👇 ================= 新增：动态修改策略参数 API ================= 👇
+    @app.put("/api/strategies/{name}/params")
+    async def update_strategy_params(name: str, params: dict):
+        strategy = strategy_manager.get_strategy(name)
+        if not strategy:
+            raise HTTPException(status_code=404, detail=f"找不到策略: {name}")
+        
+        try:
+            # 调用 base.py 中已有的 update_params 方法
+            strategy.update_params(params)
+            logger.info(f"⚙️ 策略 [{name}] 参数已动态更新: {params}")
+            return {
+                "success": True, 
+                "message": f"策略 {name} 参数更新成功",
+                "new_params": strategy.params
+            }
+        except Exception as e:
+            logger.error(f"更新策略参数失败: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    # 👆 ============================================================= 👆
+
     @app.post("/api/backtest/run")
     async def run_backtest(request: dict):
         try:
