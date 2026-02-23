@@ -231,22 +231,46 @@ class TradingEngine:
             logger.exception("💥 更新余额发生异常，堆栈追踪：")
     
     async def _status_report_task(self) -> None:
-        """状态报告任务"""
-        await asyncio.sleep(60)
+        """状态报告任务：定时打印账户余额与当前持仓"""
+        # 初始等待一小会儿，确保初始化完成
+        await asyncio.sleep(10)
         
         while self._running:
             try:
+                # 1. 获取最新余额 (从 position_manager 缓存中取，避免频繁刷 API)
                 balance = position_manager.balance
-                risk_status = risk_manager.get_risk_status()
-                # 👇 ====== 优雅提取 USDT 余额 ====== 👇
                 usdt_balance = float(balance.get('total', {}).get('USDT', 0.0)) if isinstance(balance, dict) else float(balance)
-                logger.info(f"账户余额: {usdt_balance:.2f} USDT")
-                logger.info(f"风险等级: {risk_status.risk_level}")
-                await asyncio.sleep(3600)
+                
+                # 2. 获取当前交易标的的持仓
+                pos = await position_manager.get_position(config.trading.symbol)
+                pos_qty = float(pos.get('quantity', 0.0)) if pos else 0.0
+                
+                # 3. 获取风控状态
+                risk_status = risk_manager.get_risk_status()
+                
+                # 4. 构建可视化日志
+                balance_str = f"💰 余额: {usdt_balance:.2f} USDT"
+                
+                if pos_qty > 0:
+                    # 🟢 持仓状态：使用不同图标增强辨识度
+                    pos_str = f" | 📦 持仓({config.trading.symbol}): {pos_qty:.6f}"
+                else:
+                    # ⚪ 空仓状态
+                    pos_str = f" | ⚪ 当前空仓"
+                
+                risk_str = f" | 🛡️ 风险: {risk_status.risk_level}"
+                
+                logger.info(f"{balance_str}{pos_str}{risk_str}")
+                
+                # 5. 建议缩短报告频率，比如从 3600秒(1小时) 改为 60秒(1分钟)
+                # 这样你不需要盯着 K 线更新也能看到状态变化
+                await asyncio.sleep(600)
+                
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.exception("💥 状态报告错误堆栈：")
+                await asyncio.sleep(10)
 
     async def _heartbeat_task(self):
         """专门用来证明系统还活着的‘心跳’任务"""
