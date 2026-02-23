@@ -13,6 +13,9 @@ class EventType(Enum):
     ORDER_FILLED = auto()
     POSITION_OPENED = auto()
     POSITION_CLOSED = auto()
+    # 👇 新增下面这两个
+    ADD_SYMBOL = auto()     
+    REMOVE_SYMBOL = auto()
 
 @dataclass
 class Event:

@@ -10,6 +10,7 @@ from typing import Dict, Optional
 from core.config import config
 from core.logger import logger
 from core.database import db
+from core.events import event_bus, EventType, Event
 from data.sources import crypto_data_source
 from strategies import strategy_manager, ConvergenceBreakoutStrategy
 from risk import risk_manager, position_manager
@@ -39,6 +40,32 @@ def create_app() -> FastAPI:
     @app.get("/api/status")
     async def get_status():
         return {"running": crypto_data_source.is_connected, "version": "3.0.0"}
+    
+    @app.get("/api/symbols")
+    async def get_symbols():
+        """获取当前正在监控的品种列表"""
+        return {"symbols": config.trading.symbols}
+
+    @app.post("/api/symbols/{symbol}")
+    async def add_symbol(symbol: str):
+        """挂载新交易对"""
+        symbol = symbol.upper()
+        if symbol in config.trading.symbols:
+            raise HTTPException(400, "该品种已经在监控列表中")
+        
+        # 通过总线发布指令，完美避开循环依赖
+        event_bus.publish(Event(event_type=EventType.ADD_SYMBOL, data={'symbol': symbol}))
+        return {"success": True, "message": f"已触发挂载 {symbol} 的指令"}
+
+    @app.delete("/api/symbols/{symbol}")
+    async def remove_symbol(symbol: str):
+        """卸载交易对"""
+        symbol = symbol.upper()
+        if symbol not in config.trading.symbols:
+            raise HTTPException(400, "该品种不在监控列表中")
+            
+        event_bus.publish(Event(event_type=EventType.REMOVE_SYMBOL, data={'symbol': symbol}))
+        return {"success": True, "message": f"已触发卸载 {symbol} 的指令"}
     
     @app.get("/api/account")
     async def get_account():
