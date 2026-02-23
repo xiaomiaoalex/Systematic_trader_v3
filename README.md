@@ -45,6 +45,13 @@ trading_system_final/
 
 ### 方式一：直接运行
 
+运行说明：
+
+在 backend/ 下创建 .env 并配置 API 密钥。
+
+Windows 用户推荐运行 scripts/run.ps1 以获得 AboveNormal 进程优先级。
+
+
 ```bash
 # 1. 安装依赖
 cd backend
