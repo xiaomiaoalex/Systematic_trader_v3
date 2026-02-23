@@ -66,7 +66,18 @@ class BacktestEngine:
         returns = equity_series.pct_change().dropna()
         
         total_return = (equity_curve[-1] - self.initial_capital) / self.initial_capital * 100
-        days = len(df)
+        # 原代码：
+        # days = len(df)
+        
+        # 👇 修改为基于真实时间差计算天数 👇
+        if len(df) > 1:
+            time_diff = df.index[-1] - df.index[0]
+            days = time_diff.total_seconds() / (24 * 3600)
+        else:
+            days = 0
+            
+        annual_return = (1 + total_return / 100) ** (365 / days) - 1 if days > 0 else 0
+        annual_return *= 100
         annual_return = (1 + total_return / 100) ** (365 / days) - 1 if days > 0 else 0
         annual_return *= 100
         
@@ -75,7 +86,13 @@ class BacktestEngine:
         max_drawdown = drawdown.min() * 100
         
         excess_returns = returns - 0.02 / 365
-        sharpe_ratio = np.sqrt(365) * excess_returns.mean() / excess_returns.std() if excess_returns.std() > 0 else 0
+        
+        # 🚨 核心修复 1：夏普比率浮点数陷阱保护
+        std_dev = excess_returns.std()
+        if std_dev > 1e-6: # 只有波动率大于 0.000001 时才计算夏普
+            sharpe_ratio = np.sqrt(365) * excess_returns.mean() / std_dev
+        else:
+            sharpe_ratio = 0.0
         
         sell_trades = [t for t in trades if t['type'] == 'SELL']
         winning = len([t for t in sell_trades if t.get('pnl', 0) > 0])
@@ -85,7 +102,14 @@ class BacktestEngine:
         
         total_profit = sum([t['pnl'] for t in sell_trades if t.get('pnl', 0) > 0])
         total_loss = abs(sum([t['pnl'] for t in sell_trades if t.get('pnl', 0) < 0]))
-        profit_factor = total_profit / total_loss if total_loss > 0 else float('inf')
+        
+        # 🚨 核心修复 2：盈亏比的 0/0 过滤
+        if total_loss > 0:
+            profit_factor = total_profit / total_loss
+        elif total_profit > 0:
+            profit_factor = float('inf') # 只有真的赚了钱且没亏损，才是真正的印钞机无穷大
+        else:
+            profit_factor = 0.0 # 没赚钱也没亏钱，盈亏比就是0
         
         return BacktestResult(
             total_return=total_return, annual_return=annual_return, max_drawdown=max_drawdown,

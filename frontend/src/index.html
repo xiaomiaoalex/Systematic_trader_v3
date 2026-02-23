@@ -8,10 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
     <style>
-        /* 补充一些间距和排版基础样式以防外部CSS缺失 */
-        .mt-3 { margin-top: 15px; }
-        .mt-4 { margin-top: 20px; }
-        .w-100 { width: 100%; }
+        .mt-3 { margin-top: 15px; } .mt-4 { margin-top: 20px; } .w-100 { width: 100%; }
         .text-muted { color: #888; font-size: 0.9em; }
         .panel { background: var(--card-bg, #fff); border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); padding: 20px; }
         .panel-header h2 { margin-top: 0; font-size: 1.2em; color: var(--primary-color, #333); border-bottom: 1px solid #eee; padding-bottom: 10px; }
@@ -20,9 +17,7 @@
 <body>
 <div id="app">
     <aside class="sidebar">
-        <div class="sidebar-header">
-            <div class="logo"><span class="logo-icon">📈</span><span class="logo-text">交易系统 v3</span></div>
-        </div>
+        <div class="sidebar-header"><div class="logo"><span class="logo-icon">📈</span><span class="logo-text">交易系统 v3</span></div></div>
         <nav class="sidebar-nav">
             <a v-for="item in menuItems" :key="item.id" :class="{ active: currentView === item.id }" @click="currentView = item.id">
                 <span class="nav-icon">{{ item.icon }}</span><span class="nav-text">{{ item.name }}</span>
@@ -34,10 +29,7 @@
         <header class="top-bar">
             <h1>{{ currentViewTitle }}</h1>
             <div class="top-actions">
-                <div class="balance-info">
-                    <span class="balance-label">账户余额</span>
-                    <span class="balance-value">{{ formatBalance(accountBalance) }} USDT</span>
-                </div>
+                <div class="balance-info"><span class="balance-label">账户余额</span><span class="balance-value">{{ formatBalance(accountBalance) }} USDT</span></div>
                 <button class="btn btn-primary" @click="refreshData">🔄 刷新</button>
             </div>
         </header>
@@ -46,50 +38,103 @@
             <div v-if="currentView === 'dashboard'" class="view-dashboard">
                 <div class="stats-grid">
                     <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-content"><div class="stat-value">{{ formatBalance(accountBalance) }}</div><div class="stat-label">账户余额</div></div></div>
-                    <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-content"><div class="stat-value">{{ dailyPnL >= 0 ? '+' : '' }}{{ formatBalance(dailyPnL) }}</div><div class="stat-label">今日盈亏</div></div></div>
+                    <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-content"><div class="stat-value" :class="dailyPnL >= 0 ? 'profit' : 'loss'">{{ dailyPnL >= 0 ? '+' : '' }}{{ formatBalance(dailyPnL) }}</div><div class="stat-label">今日盈亏</div></div></div>
                     <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-content"><div class="stat-value">{{ winRate }}%</div><div class="stat-label">胜率</div></div></div>
-                    <div class="stat-card"><div class="stat-icon">📉</div><div class="stat-content"><div class="stat-value">{{ maxDrawdown }}%</div><div class="stat-label">最大回撤</div></div></div>
+                    <div class="stat-card"><div class="stat-icon">📉</div><div class="stat-content"><div class="stat-value">{{ maxDrawdown.toFixed(2) }}%</div><div class="stat-label">最大回撤</div></div></div>
                 </div>
 
                 <div class="panel mt-4">
-                    <div class="panel-header">
-                        <h2>📡 监控自选池 (多品种热插拔雷达)</h2>
-                    </div>
+                    <div class="panel-header"><h2>📡 监控自选池 (多品种热插拔雷达)</h2></div>
                     <div class="panel-body mt-3">
                         <div class="symbol-input-group">
                             <input type="text" v-model="newSymbolInput" @keyup.enter="addSymbol" placeholder="输入品种 (例: DOGEUSDT)" />
-                            <button class="btn btn-primary" @click="addSymbol" :disabled="isModifyingSymbol">
-                                {{ isModifyingSymbol ? '挂载中...' : '➕ 挂载监控' }}
-                            </button>
+                            <button class="btn btn-primary" @click="addSymbol" :disabled="isModifyingSymbol">{{ isModifyingSymbol ? '挂载中...' : '➕ 挂载监控' }}</button>
                         </div>
                         <div class="symbol-tags-container mt-3">
                             <div v-if="activeSymbols.length === 0" class="text-muted">当前暂无监控品种，系统处于空转状态。</div>
                             <div v-for="sym in activeSymbols" :key="sym" class="symbol-tag">
-                                📡 {{ sym }}
-                                <button class="remove-btn" title="强制阻断并卸载" @click="removeSymbol(sym)">×</button>
+                                📡 {{ sym }} <button class="remove-btn" title="强制阻断并卸载" @click="removeSymbol(sym)">×</button>
                             </div>
                         </div>
                     </div>
                 </div>
+
+                <div class="panel mt-4">
+                    <div class="panel-header"><h2>💼 当前实时持仓</h2></div>
+                    <div class="panel-body" style="overflow-x: auto;">
+                        <table class="data-table">
+                            <thead><tr><th>品种</th><th>方向</th><th>开仓均价</th><th>数量</th><th>总额(USDT)</th><th>策略归属</th></tr></thead>
+                            <tbody>
+                                <tr v-for="pos in positions" :key="pos.id">
+                                    <td style="font-weight:bold;">{{ pos.symbol }}</td>
+                                    <td :class="pos.side === 'BUY' ? 'profit' : 'loss'">{{ pos.side === 'BUY' ? '做多 (BUY)' : '做空 (SELL)' }}</td>
+                                    <td>{{ formatBalance(pos.entry_price) }}</td>
+                                    <td>{{ pos.quantity }}</td>
+                                    <td>{{ formatBalance(pos.entry_price * pos.quantity) }}</td>
+                                    <td><span class="status-badge enabled">{{ pos.strategy || '手动开火' }}</span></td>
+                                </tr>
+                                <tr v-if="positions.length === 0"><td colspan="6" class="text-center text-muted">当前空仓等待机会</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
-            <div v-if="currentView === 'strategy'" class="view-strategy">
-                <div class="strategy-toolbar">
-                    <button class="btn btn-primary">➕ 添加策略</button>
-                    <button class="btn" @click="loadStrategies">🔄 刷新</button>
+                <div class="panel mt-4">
+                    <div class="panel-header"><h2>📜 最近交易流水 (由近到远)</h2></div>
+                    <div class="panel-body" style="overflow-x: auto;">
+                        <table class="data-table">
+                            <thead><tr><th>时间</th><th>品种</th><th>方向</th><th>成交价</th><th>数量</th><th>盈亏(USDT)</th><th>状态</th></tr></thead>
+                            <tbody>
+                                <tr v-for="t in trades" :key="t.id">
+                                    <td class="text-muted">{{ t.entry_time ? t.entry_time.replace('T', ' ').substring(0, 19) : '-' }}</td>
+                                    <td style="font-weight:bold;">{{ t.symbol }}</td>
+                                    <td :class="t.side === 'BUY' ? 'profit' : 'loss'">{{ t.side }}</td>
+                                    <td>{{ t.status === 'CLOSED' ? formatBalance(t.exit_price) : formatBalance(t.entry_price) }}</td>
+                                    <td>{{ t.quantity }}</td>
+                                    <td :class="t.pnl > 0 ? 'profit' : (t.pnl < 0 ? 'loss' : '')">
+                                        {{ t.status === 'CLOSED' ? (t.pnl > 0 ? '+' : '') + formatBalance(t.pnl) : '-' }}
+                                    </td>
+                                    <td>
+                                        <span class="status-badge" :class="t.status === 'CLOSED' ? 'disabled' : 'enabled'">
+                                            {{ t.status === 'CLOSED' ? '已平仓' : '持仓中' }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr v-if="trades.length === 0"><td colspan="7" class="text-center text-muted">暂无交易流水</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                
+            </div>
+
+            <div v-if="currentView === 'strategy'" class="view-strategy">
+                <div class="strategy-toolbar"><button class="btn btn-primary">➕ 添加策略</button><button class="btn" @click="loadStrategies">🔄 刷新</button></div>
                 <div class="strategy-grid mt-3">
                     <div v-for="s in strategies" :key="s.name" class="strategy-card">
-                        <div class="strategy-header">
-                            <h3>{{ s.name }}</h3>
-                            <span class="status-badge" :class="s.enabled ? 'enabled' : 'disabled'">
-                                {{ s.enabled ? '已启用' : '已禁用' }}
-                            </span>
-                        </div>
+                        <div class="strategy-header"><h3>{{ s.name }}</h3><span class="status-badge" :class="s.enabled ? 'enabled' : 'disabled'">{{ s.enabled ? '已启用' : '已禁用' }}</span></div>
                         <div class="strategy-body">
                             <p>{{ s.description }}</p>
+
+                            <div style="background: rgba(0,0,0,0.05); padding: 12px; border-radius: 6px; margin-top: 15px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                    <span class="text-muted">历史执行笔数:</span>
+                                    <strong style="font-size: 1.1em;">{{ getStrategyTrades(s.name).length }} 笔</strong>
+                                </div>
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span class="text-muted">策略累计盈亏:</span>
+                                    <strong style="font-size: 1.1em;" :class="getStrategyPnL(s.name) > 0 ? 'profit' : (getStrategyPnL(s.name) < 0 ? 'loss' : '')">
+                                        {{ getStrategyPnL(s.name) > 0 ? '+' : '' }}{{ formatBalance(getStrategyPnL(s.name)) }} USDT
+                                    </strong>
+                                </div>
+                            </div>
                             
+                            <div class="mt-3" v-if="getStrategyTrades(s.name).length > 0">
+                                <div style="font-size: 0.85em; color: #888; margin-bottom: 5px;">最近开火记录:</div>
+                                <div v-for="t in getStrategyTrades(s.name).slice(0, 3)" :key="t.id" style="font-size: 0.85em; display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed rgba(0,0,0,0.1);">
+                                    <span class="text-muted">{{ t.entry_time.substring(5, 16).replace('T', ' ') }}</span>
+                                    <span><span :class="t.side === 'BUY' ? 'profit' : 'loss'">{{ t.side }}</span> {{ t.symbol }}</span>
+                                </div>
+                            </div>
                             <div class="strategy-params-form mt-3" v-if="s.params && Object.keys(s.params).length > 0">
                                 <div style="font-size:0.9em; font-weight:bold; margin-bottom:8px; color:#555;">⚙️ 运行时参数调优</div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -98,16 +143,11 @@
                                         <input type="number" step="any" v-model.number="s.params[key]">
                                     </div>
                                 </div>
-                                <button class="btn btn-sm btn-success mt-3 w-100" @click="saveStrategyParams(s.name, s.params)">
-                                    💾 保存并热更新参数
-                                </button>
+                                <button class="btn btn-sm btn-success mt-3 w-100" @click="saveStrategyParams(s.name, s.params)">💾 保存并热更新参数</button>
                             </div>
-                            </div>
-                        
+                        </div>
                         <div class="strategy-footer mt-3" style="border-top: 1px solid #eee; padding-top: 10px;">
-                            <button class="btn btn-sm" :class="s.enabled ? 'btn-warning' : 'btn-success'" @click="toggleStrategy(s.name)">
-                                {{ s.enabled ? '🛑 停用引擎' : '🚀 启动引擎' }}
-                            </button>
+                            <button class="btn btn-sm" :class="s.enabled ? 'btn-warning' : 'btn-success'" @click="toggleStrategy(s.name)">{{ s.enabled ? '🛑 停用引擎' : '🚀 启动引擎' }}</button>
                         </div>
                     </div>
                 </div>
@@ -120,6 +160,16 @@
                             <h3>回测配置</h3>
                             <div class="form-group"><label>策略</label><select v-model="backtestConfig.strategy"><option v-for="s in strategies" :key="s.name" :value="s.name">{{ s.name }}</option></select></div>
                             <div class="form-group"><label>交易对</label><select v-model="backtestConfig.symbol"><option value="BTCUSDT">BTC/USDT</option><option value="ETHUSDT">ETH/USDT</option></select></div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>开始日期</label>
+                                    <input type="date" v-model="backtestConfig.startTime">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label>结束日期</label>
+                                    <input type="date" v-model="backtestConfig.endTime">
+                                </div>
+                            </div>
                             <div class="form-group"><label>初始资金</label><input type="number" v-model="backtestConfig.initialCapital"></div>
                             <button class="btn btn-primary btn-block mt-3" @click="runBacktest" :disabled="backtestRunning">{{ backtestRunning ? '计算引擎轰鸣中...' : '🚀 启动历史回测' }}</button>
                         </div>
@@ -142,7 +192,6 @@
         </div>
     </main>
 </div>
-
 <script src="js/config.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>

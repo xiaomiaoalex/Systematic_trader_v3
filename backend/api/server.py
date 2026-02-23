@@ -89,8 +89,10 @@ def create_app() -> FastAPI:
     
     @app.get("/api/positions")
     async def get_positions():
+        """获取真实持仓数据"""
         try:
-            return await crypto_data_source.get_positions()
+            # 核心修复：直接从数据库查询处于 'OPEN' 状态的持仓记录
+            return await db.get_open_trades()
         except Exception as e:
             logger.error(f"获取持仓失败: {e}")
             raise HTTPException(500, str(e))
@@ -152,33 +154,54 @@ def create_app() -> FastAPI:
     async def run_backtest(request: dict):
         try:
             import pandas as pd
-            klines = await crypto_data_source.get_klines(
-                request.get('symbol', 'BTCUSDT'),
-                request.get('interval', '1h'), 500
-            )
-            if not klines:
-                raise HTTPException(400, "无法获取K线数据")
+            import math
+            import datetime # 👈 新增 datetime 模块
             
-            # 转换数据格式
-            data = [{'open_time': k.open_time, 'open': k.open, 'high': k.high,
-                    'low': k.low, 'close': k.close, 'volume': k.volume} for k in klines]
-            df = pd.DataFrame(data)
-            df.set_index('open_time', inplace=True)
+            symbol = request.get('symbol', 'BTCUSDT').replace('/', '')
+            interval = request.get('interval', '1h')
             
-            strategy = strategy_manager.get_strategy(request.get('strategy', 'convergence_breakout'))
+            # 👇 核心升级：读取前后端约定的时间参数
+            start_time_str = request.get('startTime')
+            end_time_str = request.get('endTime')
+            
+            if start_time_str and end_time_str:
+                # 将 "2023-01-01" 转换为毫秒时间戳
+                start_ts = int(datetime.datetime.strptime(start_time_str, '%Y-%m-%d').timestamp() * 1000)
+                # 结束时间默认包含当天的 23:59:59
+                end_ts = int((datetime.datetime.strptime(end_time_str, '%Y-%m-%d') + datetime.timedelta(days=1)).timestamp() * 1000) - 1
+                
+                # 调用全新的分页引擎
+                df = await crypto_data_source.get_historical_klines(symbol, interval, start_ts, end_ts)
+            else:
+                # 兼容旧版本，没传时间就拉取最近 500 根
+                df = await crypto_data_source.get_klines(symbol, interval, 500)
+            
+            if df is None or df.empty:
+                raise HTTPException(400, "无法获取该时间段的 K 线数据，可能是超出了交易所历史范围")
+            
+            # ... 下面的策略准备和数据净化代码保持完全不变 ...
+            strategy_name = request.get('strategy', 'convergence_breakout')
+            strategy = strategy_manager.get_strategy(strategy_name)
+            
             if not strategy:
+                from strategies.convergence_breakout import ConvergenceBreakoutStrategy
                 strategy = ConvergenceBreakoutStrategy()
             
             result = await backtest_engine.run(strategy, df)
             
+            def clean_float(val):
+                if pd.isna(val) or math.isnan(val): return 0.0
+                if math.isinf(val): return 999.99 if val > 0 else 0.0 
+                return val
+            
             return {
-                'totalReturn': result.total_return, 
-                'annualReturn': result.annual_return,
-                'maxDrawdown': result.max_drawdown, 
-                'sharpeRatio': result.sharpe_ratio,
-                'winRate': result.win_rate, 
-                'profitFactor': result.profit_factor,
-                'totalTrades': result.total_trades, 
+                'totalReturn': clean_float(result.total_return),
+                'annualReturn': clean_float(result.annual_return),
+                'maxDrawdown': clean_float(result.max_drawdown),
+                'sharpeRatio': clean_float(result.sharpe_ratio),
+                'winRate': clean_float(result.win_rate),
+                'profitFactor': clean_float(result.profit_factor),
+                'totalTrades': result.total_trades,
                 'trades': result.trades[:100]
             }
         except Exception as e:

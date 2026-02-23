@@ -202,3 +202,31 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
     font-size: 0.9em;
     font-style: italic;
 }
+
+/* ================= 交易与持仓数据表格 ================= */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin-top: 10px;
+}
+
+.data-table th, .data-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.data-table th {
+    color: var(--text-muted, #848e9c);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.data-table tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.text-center { text-align: center !important; }
+.profit { color: var(--success, #0ecb81) !important; font-weight: bold; }
+.loss { color: var(--danger, #f6465d) !important; font-weight: bold; }

@@ -181,7 +181,72 @@ class CryptoDataSource:
         # 如果有传来 timeframe 就用 timeframe，否则默认用 interval
         timeframe = kwargs.get('timeframe', interval)
         return await self.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-
+    
+    # 👇 ====== 新增：历史回测专用的分页拉取引擎 ====== 👇
+    async def get_historical_klines(self, symbol: str, interval: str, start_time: int, end_time: int) -> pd.DataFrame:
+        """
+        全量历史 K 线拉取引擎：自动处理币安的单次 1000 根限制，循环分页拉取
+        """
+        if not self._connected or not self._exchange:
+            await self.connect()
+            
+        formatted_symbol = symbol.replace('/', '')
+        all_ohlcv = []
+        since = start_time
+        limit = 1000  # 币安单次拉取上限
+        
+        logger.info(f"[{self.name}] ⏳ 开始分页拉取 {symbol} 历史数据 (时间跨度: {start_time} -> {end_time})...")
+        
+        while since < end_time:
+            try:
+                # 拉取当前批次
+                ohlcv = await self._exchange.fetch_ohlcv(
+                    formatted_symbol, 
+                    timeframe=interval, 
+                    since=since, 
+                    limit=limit
+                )
+                
+                if not ohlcv:
+                    break  # 没有数据了
+                
+                # 过滤掉超出 end_time 的多余数据
+                valid_ohlcv = [k for k in ohlcv if k[0] <= end_time]
+                if not valid_ohlcv:
+                    break
+                    
+                all_ohlcv.extend(valid_ohlcv)
+                
+                # 准备下一批次的起始时间 (最后一根 K 线的时间戳 + 1毫秒)
+                new_since = valid_ohlcv[-1][0] + 1
+                if new_since <= since:
+                    break  # 防止死循环
+                since = new_since
+                
+                # 🚦 遵守交易所限流规则，每拉取 1000 根休息 0.1 秒
+                await asyncio.sleep(0.1)
+                
+            except Exception as e:
+                logger.error(f"[{self.name}] ❌ 分页拉取历史 K 线中断: {e}")
+                break
+                
+        if not all_ohlcv:
+            return pd.DataFrame()
+            
+        logger.info(f"[{self.name}] ✅ 历史数据拉取完成，共计 {len(all_ohlcv)} 根 K 线。")
+        
+        # 组装为 DataFrame
+        df = pd.DataFrame(all_ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['symbol'] = symbol
+        df['interval'] = interval
+        df['open_time'] = df['timestamp']
+        df['close_time'] = df['timestamp']
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+        
+        return df
+    # 👆 ========================================= 👆
+    
     @property
     def is_connected(self) -> bool:
         return self._connected
