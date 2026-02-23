@@ -27,8 +27,21 @@ const API = {
             throw error;
         }
     },
+
+    // ================= 交易对自选池 (热插拔) =================
+    async getSymbols() {
+        return this.request('GET', '/symbols');
+    },
+
+    async addSymbol(symbol) {
+        return this.request('POST', `/symbols/${symbol}`);
+    },
+
+    async removeSymbol(symbol) {
+        return this.request('DELETE', `/symbols/${symbol}`);
+    },
     
-    // 系统状态
+    // ================= 系统状态 =================
     async getStatus() {
         return this.request('GET', '/status');
     },

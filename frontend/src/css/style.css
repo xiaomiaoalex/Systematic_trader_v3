@@ -79,3 +79,126 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 
 .profit { color: var(--success); }
 .loss { color: var(--danger); }
+/* ==========================================================================
+   新增功能模块：多品种热插拔自选池 & 策略参数热更新
+   ========================================================================== */
+
+/* 1. 交易对自选池输入区 */
+.symbol-input-group {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.symbol-input-group input {
+    flex: 1;
+    padding: 10px 15px;
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 6px;
+    background-color: var(--bg-color, #fff);
+    color: var(--text-color, #333);
+    font-size: 14px;
+    transition: border-color 0.3s ease;
+}
+
+.symbol-input-group input:focus {
+    outline: none;
+    border-color: var(--primary-color, #007bff);
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+/* 2. 交易对标签容器 */
+.symbol-tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    min-height: 40px;
+}
+
+/* 3. 极客风独立交易对标签 */
+.symbol-tag {
+    display: flex;
+    align-items: center;
+    background-color: rgba(0, 123, 255, 0.08);
+    border: 1px solid rgba(0, 123, 255, 0.3);
+    color: var(--primary-color, #007bff);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.9em;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: all 0.2s ease-in-out;
+}
+
+.symbol-tag:hover {
+    background-color: rgba(0, 123, 255, 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 123, 255, 0.1);
+}
+
+/* 4. 卸载按钮 (红叉) */
+.symbol-tag .remove-btn {
+    margin-left: 10px;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    color: #dc3545;
+    font-size: 1.4em;
+    line-height: 0.8;
+    padding: 0 4px;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.symbol-tag .remove-btn:hover {
+    color: #fff;
+    background-color: #dc3545;
+    transform: scale(1.1);
+}
+
+/* 5. 策略参数调优表单区域 */
+.strategy-params-form {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #eee;
+    margin-top: 15px;
+}
+
+/* 6. 单个参数输入组 */
+.param-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.param-group label {
+    font-size: 0.85em;
+    color: #555;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.param-group input {
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.2s;
+}
+
+.param-group input:focus {
+    outline: none;
+    border-color: #28a745;
+    box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.1);
+}
+
+/* 7. 辅助工具类 (防止 index.html 里的内联样式失效) */
+.w-100 {
+    width: 100%;
+}
+
+.text-muted {
+    color: #6c757d;
+    font-size: 0.9em;
+    font-style: italic;
+}

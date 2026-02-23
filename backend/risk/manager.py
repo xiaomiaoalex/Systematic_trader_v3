@@ -85,10 +85,15 @@ class RiskManager:
         return True, "OK"
     
     def update_balance(self, current_balance: float) -> None:
+        # 1. 更新峰值和最大回撤
         if current_balance > self._peak_balance:
             self._peak_balance = current_balance
         if self._peak_balance > 0:
             self._current_drawdown = (self._peak_balance - current_balance) / self._peak_balance * 100
+            
+        # 👇 核心修复：动态计算今日盈亏 (当前余额 - 启动时的初始余额)
+        if self._daily_start_balance > 0:
+            self._daily_pnl = current_balance - self._daily_start_balance
     
     def get_risk_status(self) -> RiskStatus:
         start_balance = self._daily_start_balance

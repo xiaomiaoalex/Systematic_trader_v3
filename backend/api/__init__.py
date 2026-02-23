@@ -1,3 +1,3 @@
-from api.server import create_app, run_server
+from api.server import create_app
 
 __all__ = ['create_app', 'run_server']

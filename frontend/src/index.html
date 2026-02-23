@@ -7,25 +7,41 @@
     <link rel="stylesheet" href="css/style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+    <style>
+        /* 补充一些间距和排版基础样式以防外部CSS缺失 */
+        .mt-3 { margin-top: 15px; }
+        .mt-4 { margin-top: 20px; }
+        .w-100 { width: 100%; }
+        .text-muted { color: #888; font-size: 0.9em; }
+        .panel { background: var(--card-bg, #fff); border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); padding: 20px; }
+        .panel-header h2 { margin-top: 0; font-size: 1.2em; color: var(--primary-color, #333); border-bottom: 1px solid #eee; padding-bottom: 10px; }
+    </style>
 </head>
 <body>
 <div id="app">
     <aside class="sidebar">
-        <div class="sidebar-header"><div class="logo"><span class="logo-icon">📈</span><span class="logo-text">交易系统 v3</span></div></div>
+        <div class="sidebar-header">
+            <div class="logo"><span class="logo-icon">📈</span><span class="logo-text">交易系统 v3</span></div>
+        </div>
         <nav class="sidebar-nav">
             <a v-for="item in menuItems" :key="item.id" :class="{ active: currentView === item.id }" @click="currentView = item.id">
                 <span class="nav-icon">{{ item.icon }}</span><span class="nav-text">{{ item.name }}</span>
             </a>
         </nav>
     </aside>
+    
     <main class="main-content">
         <header class="top-bar">
             <h1>{{ currentViewTitle }}</h1>
             <div class="top-actions">
-                <div class="balance-info"><span class="balance-label">账户余额</span><span class="balance-value">{{ formatBalance(accountBalance) }} USDT</span></div>
+                <div class="balance-info">
+                    <span class="balance-label">账户余额</span>
+                    <span class="balance-value">{{ formatBalance(accountBalance) }} USDT</span>
+                </div>
                 <button class="btn btn-primary" @click="refreshData">🔄 刷新</button>
             </div>
         </header>
+        
         <div class="content-area">
             <div v-if="currentView === 'dashboard'" class="view-dashboard">
                 <div class="stats-grid">
@@ -34,17 +50,69 @@
                     <div class="stat-card"><div class="stat-icon">📈</div><div class="stat-content"><div class="stat-value">{{ winRate }}%</div><div class="stat-label">胜率</div></div></div>
                     <div class="stat-card"><div class="stat-icon">📉</div><div class="stat-content"><div class="stat-value">{{ maxDrawdown }}%</div><div class="stat-label">最大回撤</div></div></div>
                 </div>
-            </div>
+
+                <div class="panel mt-4">
+                    <div class="panel-header">
+                        <h2>📡 监控自选池 (多品种热插拔雷达)</h2>
+                    </div>
+                    <div class="panel-body mt-3">
+                        <div class="symbol-input-group">
+                            <input type="text" v-model="newSymbolInput" @keyup.enter="addSymbol" placeholder="输入品种 (例: DOGEUSDT)" />
+                            <button class="btn btn-primary" @click="addSymbol" :disabled="isModifyingSymbol">
+                                {{ isModifyingSymbol ? '挂载中...' : '➕ 挂载监控' }}
+                            </button>
+                        </div>
+                        <div class="symbol-tags-container mt-3">
+                            <div v-if="activeSymbols.length === 0" class="text-muted">当前暂无监控品种，系统处于空转状态。</div>
+                            <div v-for="sym in activeSymbols" :key="sym" class="symbol-tag">
+                                📡 {{ sym }}
+                                <button class="remove-btn" title="强制阻断并卸载" @click="removeSymbol(sym)">×</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+
             <div v-if="currentView === 'strategy'" class="view-strategy">
-                <div class="strategy-toolbar"><button class="btn btn-primary">➕ 添加策略</button><button class="btn" @click="loadStrategies">🔄 刷新</button></div>
-                <div class="strategy-grid">
+                <div class="strategy-toolbar">
+                    <button class="btn btn-primary">➕ 添加策略</button>
+                    <button class="btn" @click="loadStrategies">🔄 刷新</button>
+                </div>
+                
+                <div class="strategy-grid mt-3">
                     <div v-for="s in strategies" :key="s.name" class="strategy-card">
-                        <div class="strategy-header"><h3>{{ s.name }}</h3><span class="status-badge" :class="s.enabled ? 'enabled' : 'disabled'">{{ s.enabled ? '已启用' : '已禁用' }}</span></div>
-                        <div class="strategy-body"><p>{{ s.description }}</p></div>
-                        <div class="strategy-footer"><button class="btn btn-sm" :class="s.enabled ? 'btn-warning' : 'btn-success'" @click="toggleStrategy(s.name)">{{ s.enabled ? '禁用' : '启用' }}</button></div>
+                        <div class="strategy-header">
+                            <h3>{{ s.name }}</h3>
+                            <span class="status-badge" :class="s.enabled ? 'enabled' : 'disabled'">
+                                {{ s.enabled ? '已启用' : '已禁用' }}
+                            </span>
+                        </div>
+                        <div class="strategy-body">
+                            <p>{{ s.description }}</p>
+                            
+                            <div class="strategy-params-form mt-3" v-if="s.params && Object.keys(s.params).length > 0">
+                                <div style="font-size:0.9em; font-weight:bold; margin-bottom:8px; color:#555;">⚙️ 运行时参数调优</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                    <div class="param-group" v-for="(val, key) in s.params" :key="key">
+                                        <label>{{ key }}</label>
+                                        <input type="number" step="any" v-model.number="s.params[key]">
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-success mt-3 w-100" @click="saveStrategyParams(s.name, s.params)">
+                                    💾 保存并热更新参数
+                                </button>
+                            </div>
+                            </div>
+                        
+                        <div class="strategy-footer mt-3" style="border-top: 1px solid #eee; padding-top: 10px;">
+                            <button class="btn btn-sm" :class="s.enabled ? 'btn-warning' : 'btn-success'" @click="toggleStrategy(s.name)">
+                                {{ s.enabled ? '🛑 停用引擎' : '🚀 启动引擎' }}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
+
             <div v-if="currentView === 'backtest'" class="view-backtest">
                 <div class="backtest-layout">
                     <div class="backtest-config">
@@ -53,7 +121,7 @@
                             <div class="form-group"><label>策略</label><select v-model="backtestConfig.strategy"><option v-for="s in strategies" :key="s.name" :value="s.name">{{ s.name }}</option></select></div>
                             <div class="form-group"><label>交易对</label><select v-model="backtestConfig.symbol"><option value="BTCUSDT">BTC/USDT</option><option value="ETHUSDT">ETH/USDT</option></select></div>
                             <div class="form-group"><label>初始资金</label><input type="number" v-model="backtestConfig.initialCapital"></div>
-                            <button class="btn btn-primary btn-block" @click="runBacktest" :disabled="backtestRunning">{{ backtestRunning ? '回测中...' : '开始回测' }}</button>
+                            <button class="btn btn-primary btn-block mt-3" @click="runBacktest" :disabled="backtestRunning">{{ backtestRunning ? '计算引擎轰鸣中...' : '🚀 启动历史回测' }}</button>
                         </div>
                     </div>
                     <div class="backtest-results">
@@ -67,13 +135,14 @@
                                 <div class="perf-card"><div class="perf-value">{{ backtestResult.profitFactor.toFixed(2) }}</div><div class="perf-label">盈亏比</div></div>
                             </div>
                         </div>
-                        <div v-else class="empty-state"><div class="empty-icon">📊</div><p>配置参数后点击"开始回测"</p></div>
+                        <div v-else class="empty-state"><div class="empty-icon">📊</div><p>配置参数后点击"启动历史回测"</p></div>
                     </div>
                 </div>
             </div>
         </div>
     </main>
 </div>
+
 <script src="js/config.js"></script>
 <script src="js/api.js"></script>
 <script src="js/app.js"></script>
