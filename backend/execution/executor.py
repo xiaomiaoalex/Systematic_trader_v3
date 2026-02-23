@@ -1,4 +1,5 @@
 import asyncio
+import ccxt  # 👈 【核心修复】引入 ccxt 以便捕获细分异常
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -121,11 +122,21 @@ class OrderExecutor:
                 order.avg_price = float(result.get('average', 0))
                 logger.info(f"API 下单成功! OrderID: {order.order_id}")
                 return order
-            except Exception as e:
-                logger.warning(f"API 请求失败 (尝试 {attempt + 1}/{self._max_retries}): {e}")
+                
+            # 👇【核心修复：智能熔断】区分网络错误和业务错误
+            except ccxt.NetworkError as e:
+                logger.warning(f"网络异常，准备重试 (尝试 {attempt + 1}/{self._max_retries}): {e}")
                 order.error_message = str(e)
                 if attempt < self._max_retries - 1:
                     await asyncio.sleep(1.0 * (attempt + 1))
+            except ccxt.ExchangeError as e:
+                logger.error(f"交易所拒绝请求，停止重试: {e}")
+                order.error_message = str(e)
+                break  # 业务报错直接熔断，不再重试！
+            except Exception as e:
+                logger.error(f"发生未知严重错误: {e}")
+                order.error_message = str(e)
+                break
                     
         order.status = OrderStatus.FAILED
         return order
