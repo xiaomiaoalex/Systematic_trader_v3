@@ -76,8 +76,13 @@ class BinanceConfig:
 @dataclass
 class TradingConfig:
     # 非敏感信息：继续使用普通的 os.getenv
-    symbol: str = field(default_factory=lambda: os.getenv("SYMBOL", "BTCUSDT"))
+    # 👇 增加 strip() 自动去除空格，防止配置错误，并转为列表
+    symbols: list = field(default_factory=lambda: [
+        s.strip() for s in os.getenv("SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT").split(",") if s.strip()
+    ])
     kline_interval: str = field(default_factory=lambda: os.getenv("KLINE_INTERVAL", "1h"))
+    # 新增：最大同时持仓品种数
+    max_active_trades: int = field(default_factory=lambda: int(os.getenv("MAX_ACTIVE_TRADES", "3")))
     max_position_percent: float = field(default_factory=lambda: float(os.getenv("MAX_POSITION_PERCENT", "10")))
     max_daily_loss_percent: float = field(default_factory=lambda: float(os.getenv("MAX_DAILY_LOSS_PERCENT", "5.0")))
     max_drawdown_percent: float = field(default_factory=lambda: float(os.getenv("MAX_DRAWDOWN_PERCENT", "15.0")))
