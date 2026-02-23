@@ -6,6 +6,7 @@
 import asyncio
 import sys
 from typing import Optional
+from datetime import datetime 
 
 from core.config import config
 from core.logger import logger
@@ -138,7 +139,11 @@ class TradingEngine:
         
         while self._running:
             try:
-                await asyncio.sleep(60)
+                # 👇【核心修复：时钟对齐】精准计算距离下一个整分钟还有几秒
+                now = datetime.now()
+                sleep_seconds = 60 - now.second - now.microsecond / 1_000_000
+                # 加上 1.5 秒余量，确保币安已经成功生成了上一分钟的收盘 K 线
+                await asyncio.sleep(sleep_seconds + 1.5)
                 
                 klines = await crypto_data_source.get_klines(
                     symbol=config.trading.symbol,
@@ -182,7 +187,10 @@ class TradingEngine:
             if df.empty:
                 return
             
-            df = indicators.add_all_indicators(df)
+            # 原来的代码: df = indicators.add_all_indicators(df)
+            
+            # 👇【核心修复：异步防假死】把 CPU 密集型计算推入后台线程池
+            df = await asyncio.to_thread(indicators.add_all_indicators, df)
             position = await position_manager.get_position()
             signals = await strategy_manager.generate_signals(df, position)
             
